@@ -1,0 +1,14 @@
+[general]
+name=GeoLogic Flight Planner
+qgisMinimumVersion=4.00
+qgisMaximumVersion=4.99
+icon=icon.png
+description=Gera rotas de voo de alta eficiência com acompanhamento de relevo, compatíveis com a API UAV.COM (DJI Fly).
+version=2.0.3
+author=Victor Moreira Naves Ribeiro
+email=victor.naves1810@gmail.com
+about=Plugin desenvolvido para topografia e mapeamento profissional de alta eficiência. Gera grades otimizadas via Bounding Box, aplica Buffer de borda, transforma CRS e injeta alturas MDE para drones como DJI Mini 5 Pro.
+tracker=https://github.com/seu-github/issues
+repository=https://github.com/seu-github/geologic_flight_planner
+tags=uav, drone, dji, wpml, photogrammetry, waypoints, geologic
+category=Vector
