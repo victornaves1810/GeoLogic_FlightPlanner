@@ -1,7 +1,11 @@
 import os
 from qgis.core import QgsProcessingProvider
 from qgis.PyQt.QtGui import QIcon
-from .geologic_algorithm import DjiAdvancedWaypointAlgorithm, DjiSimpleWaypointAlgorithm
+from .geologic_algorithm import (
+    DjiAdvancedWaypointAlgorithm,
+    DjiSimpleWaypointAlgorithm
+)
+
 
 class GeoLogicProvider(QgsProcessingProvider):
     def loadAlgorithms(self, *args, **kwargs):
@@ -19,6 +23,7 @@ class GeoLogicProvider(QgsProcessingProvider):
         # Chama o ícone icon.png que está na mesma pasta do plugin
         path = os.path.join(os.path.dirname(__file__), 'icon.png')
         return QIcon(path)
+
 
 class GeoLogicProviderPlugin(object):
     def __init__(self):
