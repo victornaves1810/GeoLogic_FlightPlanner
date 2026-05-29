@@ -130,7 +130,7 @@ def process_flight_logic(
         features = list(source.getFeatures())
         if not features:
             return results
-            
+
         poly_geom = features[0].geometry()
         if poly_geom.isNull() or poly_geom.isEmpty():
             return results
@@ -178,8 +178,8 @@ def process_flight_logic(
                 if intersection.wkbType() == QgsWkbTypes.LineString:
                     clipped_lines.append(intersection)
                 elif intersection.wkbType() == QgsWkbTypes.MultiLineString:
-                    for l in intersection.asGeometryCollection():
-                        clipped_lines.append(l)
+                    for line_part in intersection.asGeometryCollection():
+                        clipped_lines.append(line_part)
             y -= spacing_step
 
         # ==========================================
@@ -293,7 +293,7 @@ def process_flight_logic(
                 if v is not None:
                     base_altitude_start = v
                     break
-                    
+
         if base_altitude_start is None:
             base_altitude_start = 0
 
@@ -401,12 +401,12 @@ def process_flight_logic(
             </wpml:actionActuatorFuncParam>
           </wpml:action>
         </wpml:actionGroup>"""
-        
+
                 if i == 0:
                     turn_mode = "toPointAndStopWithContinuityCurvature"
                 else:
                     turn_mode = "toPointAndPassWithContinuityCurvature"
-                    
+
                 placemarks_xml += f"""
       <Placemark>
         <Point><coordinates>{lon},{lat}</coordinates></Point>
@@ -475,13 +475,13 @@ def process_flight_logic(
             temp_dir = tempfile.mkdtemp()
             wpmz_dir = os.path.join(temp_dir, "wpmz")
             os.makedirs(wpmz_dir)
-            
+
             with open(os.path.join(wpmz_dir, "template.kml"), 'w', encoding='utf-8') as f:
                 f.write(template_kml)
-                
+
             with open(os.path.join(wpmz_dir, "waylines.wpml"), 'w', encoding='utf-8') as f:
                 f.write(waylines_wpml)
-                
+
             with zipfile.ZipFile(kmz_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 zipf.write(os.path.join(wpmz_dir, "template.kml"), "wpmz/template.kml")
                 zipf.write(os.path.join(wpmz_dir, "waylines.wpml"), "wpmz/waylines.wpml")
@@ -490,7 +490,7 @@ def process_flight_logic(
         if line_details:
             algo_instance.pp_lines = GeoLogicStylePostProcessor('lines')
             line_details.setPostProcessor(algo_instance.pp_lines)
-            
+
         point_details = context.layerToLoadOnCompletionDetails(dest_id_points)
         if point_details:
             algo_instance.pp_points = GeoLogicStylePostProcessor('points')
