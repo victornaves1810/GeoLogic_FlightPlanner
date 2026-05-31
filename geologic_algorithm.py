@@ -120,7 +120,8 @@ def process_flight_logic(
         algo_instance, context, feedback, source, dem_layer, flight_altitude,
         flight_speed, spacing_val, buffer_val, dens_val, use_custom_angle,
         azimuth_val, kmz_path, dest_id_lines, sink_lines, dest_id_points,
-        sink_points, line_fields, point_fields, is_simple_mode=False):
+        sink_points, line_fields, point_fields, is_simple_mode=False,
+        max_wp=200):
 
     results = {'OUTPUT_LINES': dest_id_lines, 'OUTPUT_POINTS': dest_id_points}
     if not source:
@@ -155,13 +156,12 @@ def process_flight_logic(
             )
         else:
             angle_rad = get_optimal_angle(poly_geom)
-            # Converte o ângulo matemático da geometria para Azimute Geográfico (0-360) para exibição
             display_angle_deg = math.degrees(angle_rad) + 90.0
             if display_angle_deg >= 360.0:
                 display_angle_deg -= 360.0
-                
-            angle_deg = math.degrees(angle_rad) # Mantemos a variável original para a rotação física do algoritmo não quebrar
-            
+
+            angle_deg = math.degrees(angle_rad)
+
             feedback.pushInfo(
                 f"ℹ️ Orientation: Auto-calculated optimal azimuth of "
                 f"{display_angle_deg:.2f}° for efficiency."
@@ -189,22 +189,21 @@ def process_flight_logic(
             y -= spacing_step
 
         # ==========================================
-        # RC2 MEMORY PROTECTION & SMART DENSIFICATION
+        # HARDWARE MEMORY PROTECTION & SMART DENSIFICATION
         # ==========================================
-        MAX_RC2_WP = 200
         MAX_FLIGHT_TIME = 35.0
 
         if dem_layer is None:
             actual_dens_step = float('inf')
             feedback.pushInfo(
-                "ℹ️ RC2 Optimization: Flat flight (No DEM) detected. "
+                "ℹ️ Hardware Optimization: Flat flight (No DEM) detected. "
                 "Intermediate waypoints disabled to save memory."
             )
         else:
             test_dens = 10.0 if is_simple_mode else max(1.0, dens_val)
             final_wp_count = 0
 
-            while test_dens <= 40.0:
+            while test_dens <= 80.0:
                 final_wp_count = 0
                 for line_geom in clipped_lines:
                     pts = line_geom.asPolyline()
@@ -214,31 +213,31 @@ def process_flight_logic(
                         dist_m = math.hypot(dx, dy) * conversion_factor
                         final_wp_count += int(dist_m / test_dens) + 2
 
-                if final_wp_count <= MAX_RC2_WP:
+                if final_wp_count <= max_wp:
                     break
 
-                if test_dens >= 40.0:
+                if test_dens >= 80.0:
                     break
 
                 test_dens += 1.0
 
             actual_dens_step = test_dens / conversion_factor
 
-            if final_wp_count > MAX_RC2_WP:
+            if final_wp_count > max_wp:
                 feedback.pushWarning(
-                    f"⚠️ RC2 Alert: Route is massive. Densification capped at "
-                    f"40.0m, but total waypoints ({final_wp_count}) exceeds "
-                    f"safe limit of {MAX_RC2_WP}. App may be unstable."
+                    f"⚠️ Hardware Alert: Route is massive. Densification "
+                    f"capped at 80.0m, but total waypoints ({final_wp_count}) "
+                    f"exceeds custom limit of {max_wp}. App may be unstable."
                 )
             elif test_dens > (10.0 if is_simple_mode else dens_val):
                 feedback.pushWarning(
-                    f"⚠️ RC2 Protection: Densification spacing dynamically "
-                    f"increased to {test_dens:.1f}m to keep waypoints under "
-                    f"{MAX_RC2_WP} (Total: {final_wp_count} pts)."
+                    f"⚠️ Hardware Protection: Densification spacing "
+                    f"dynamically increased to {test_dens:.1f}m to keep "
+                    f"waypoints under {max_wp} (Total: {final_wp_count} pts)."
                 )
             else:
                 feedback.pushInfo(
-                    f"ℹ️ RC2 Safe: Using {test_dens:.1f}m densification "
+                    f"ℹ️ Hardware Safe: Using {test_dens:.1f}m densification "
                     f"(Estimated: {final_wp_count} total waypoints)."
                 )
 
@@ -517,6 +516,7 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
     ALTITUDE = 'ALTITUDE'
     SPEED = 'SPEED'
     OVERLAP_PERCENT = 'OVERLAP_PERCENT'
+    MAX_WP = 'MAX_WP'
     OUTPUT_KMZ = 'OUTPUT_KMZ'
     OUTPUT_LINES = 'OUTPUT_LINES'
     OUTPUT_POINTS = 'OUTPUT_POINTS'
@@ -566,6 +566,10 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
         ))
+        self.addParameter(QgsProcessingParameterNumber(
+            self.MAX_WP, self.tr('Max Waypoints Limit'),
+            type=QgsProcessingParameterNumber.Integer, defaultValue=200
+        ))
 
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
@@ -586,6 +590,7 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
         overlap_percent = self.parameterAsDouble(
             parameters, self.OVERLAP_PERCENT, context
         )
+        max_wp_limit = self.parameterAsInt(parameters, self.MAX_WP, context)
 
         footprint_width = flight_altitude * 1.5
         spacing_val = footprint_width * (1.0 - (overlap_percent / 100.0))
@@ -625,7 +630,7 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             self, context, feedback, source, dem_layer, flight_altitude,
             flight_speed, spacing_val, buffer_val, dens_val, False, 0.0,
             kmz_path, dest_id_lines, sink_lines, dest_id_points, sink_points,
-            line_fields, point_fields, True
+            line_fields, point_fields, True, max_wp_limit
         )
 
 
@@ -647,6 +652,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
 
     BUFFER_AREA = 'BUFFER_AREA'
     DENSIFICATION = 'DENSIFICATION'
+    MAX_WP = 'MAX_WP'
     OUTPUT_KMZ = 'OUTPUT_KMZ'
     OUTPUT_LINES = 'OUTPUT_LINES'
     OUTPUT_POINTS = 'OUTPUT_POINTS'
@@ -672,7 +678,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr(
             "Maximum route optimization with manual azimuth control, automated "
-            "overlap calculation, native CRS, and RC2 memory protection."
+            "overlap calculation, native CRS, and hardware memory protection."
         )
 
     def initAlgorithm(self, config=None):
@@ -725,6 +731,10 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.DENSIFICATION, self.tr('DEM Densification (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=10.0
         ))
+        self.addParameter(QgsProcessingParameterNumber(
+            self.MAX_WP, self.tr('Max Waypoints Limit'),
+            type=QgsProcessingParameterNumber.Integer, defaultValue=200
+        ))
 
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
@@ -742,6 +752,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
         dem_layer = self.parameterAsRasterLayer(parameters, self.DEM, context)
         flight_altitude = self.parameterAsInt(parameters, self.ALTITUDE, context)
         flight_speed = self.parameterAsDouble(parameters, self.SPEED, context)
+        max_wp_limit = self.parameterAsInt(parameters, self.MAX_WP, context)
 
         use_overlap = self.parameterAsBool(parameters, self.USE_OVERLAP, context)
         if use_overlap:
@@ -809,5 +820,5 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self, context, feedback, source, dem_layer, flight_altitude,
             flight_speed, spacing_val, buffer_val, dens_val, use_custom_angle,
             azimuth_val, kmz_path, dest_id_lines, sink_lines, dest_id_points,
-            sink_points, line_fields, point_fields, False
+            sink_points, line_fields, point_fields, False, max_wp_limit
         )
