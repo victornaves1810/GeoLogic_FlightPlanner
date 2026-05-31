@@ -738,7 +738,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             type=QgsProcessingParameterNumber.Double, defaultValue=15.0
         ))
         self.addParameter(QgsProcessingParameterNumber(
-            self.DENSIFICATION, self.tr('DEM Densification (m)'),
+            self.DENSIFICATION, self.tr('Min Densification Distance (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=10.0
         ))
         self.addParameter(QgsProcessingParameterNumber(
