@@ -155,10 +155,16 @@ def process_flight_logic(
             )
         else:
             angle_rad = get_optimal_angle(poly_geom)
-            angle_deg = math.degrees(angle_rad)
+            # Converte o ângulo matemático da geometria para Azimute Geográfico (0-360) para exibição
+            display_angle_deg = math.degrees(angle_rad) + 90.0
+            if display_angle_deg >= 360.0:
+                display_angle_deg -= 360.0
+                
+            angle_deg = math.degrees(angle_rad) # Mantemos a variável original para a rotação física do algoritmo não quebrar
+            
             feedback.pushInfo(
-                f"ℹ️ Orientation: Auto-calculated map angle of "
-                f"{angle_deg:.2f}° for efficiency."
+                f"ℹ️ Orientation: Auto-calculated optimal azimuth of "
+                f"{display_angle_deg:.2f}° for efficiency."
             )
 
         poly_geom.rotate(-angle_deg, center)
