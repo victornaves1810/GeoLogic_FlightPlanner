@@ -27,7 +27,7 @@ The DJI RC2 controller has a strict hardware limitation that can cause applicati
 
 ### 4. Kinematic Flight Time Estimation & Autonomy Safeties
 Traditional planners divide total distance by cruise speed, neglecting multi-axis drone deceleration. This plugin applies a calibrated kinematic penalty model:
-$$	ext{Delay per turn} = 2.0s + (	ext{flight\_speed} 	imes 0.7s)$$
+**Delay per turn** = 2.0s + (*flight_speed* × 0.7s)
 This accounts for drone inertia during border transitions. If the cumulative flight time exceeds **35 minutes**—the typical safe operational threshold for commercial drone batteries—the plugin throws a critical `🚨 DANGER` alert in the QGIS log panel to prevent unsafe field deployments.
 
 ### 5. Native WPML Architecture Compliance
@@ -89,4 +89,4 @@ Since this plugin is currently shared as an offline package, you can easily inst
 *This core processing engine was architected under the **"Vibe Coding"** philosophy—seamlessly pairing domain-specific geospatial engineering logic with Advanced Artificial Intelligence to accelerate code optimization, framework parsing, and hardware compliance.*
 
 Connect or follow project logs via LinkedIn:  
-🔗 [Victor Moreira Naves Ribeiro on LinkedIn](https://www.linkedin.com/in/victor-m-naves-ribeiro-50315821a/)
+🔗 [Victor Moreira Naves Ribeiro on LinkedIn](https://www.linkedin.com/in/victor-ribeiro-50315821a/)
