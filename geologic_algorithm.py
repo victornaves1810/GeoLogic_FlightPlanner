@@ -193,62 +193,60 @@ def process_flight_logic(
         # ==========================================
         MAX_FLIGHT_TIME = 35.0
 
-        if dem_layer is None:
-            actual_dens_step = float('inf')
+        test_dens = 5.0 if is_simple_mode else max(1.0, dens_val)
+        final_wp_count = 0
+        
+        # Calculate base waypoints (just start and end of each line)
+        base_wp_count = sum(2 for line_geom in clipped_lines if len(line_geom.asPolyline()) >= 2)
+
+        # Iterate to find the densification distance that fits within max_wp
+        while True:
+            final_wp_count = 0
+            for line_geom in clipped_lines:
+                pts = line_geom.asPolyline()
+                if len(pts) >= 2:
+                    dx = pts[-1].x() - pts[0].x()
+                    dy = pts[-1].y() - pts[0].y()
+                    dist_m = math.hypot(dx, dy) * conversion_factor
+                    # +1 for start point, + (segments - 1) for intermediates, +1 for end point
+                    final_wp_count += int(dist_m / test_dens) + 2
+
+            # Break if we are within limits
+            if final_wp_count <= max_wp:
+                break
+                
+            # If the bare minimum waypoints (no intermediate points) already exceed the limit, 
+            # no amount of densification increase will solve it. Break and use infinity.
+            if base_wp_count > max_wp:
+                test_dens = float('inf')
+                final_wp_count = base_wp_count
+                break
+
+            # Increase test distance to reduce points
+            test_dens += 1.0
+
+        actual_dens_step = test_dens / conversion_factor
+
+        if base_wp_count > max_wp:
+            feedback.pushWarning(
+                f"⚠️ Hardware Alert: The area is too large! Even with no intermediate waypoints, "
+                f"the route requires {base_wp_count} waypoints, which exceeds your limit of {max_wp}. "
+                f"You MUST split the polygon into smaller areas or increase the Max Waypoints limit."
+            )
+        elif test_dens > 100.0 and test_dens != float('inf'):
+            feedback.pushWarning(
+                f"⚠️ Hardware Protection: Densification spacing was dynamically increased to {test_dens:.1f}m "
+                f"to keep waypoints under {max_wp}. Terrain Following quality may be compromised!"
+            )
+        elif test_dens > (5.0 if is_simple_mode else dens_val):
             feedback.pushInfo(
-                "ℹ️ Hardware Optimization: Flat flight (No DEM) detected. "
-                "Intermediate waypoints disabled to save memory."
+                f"ℹ️ Hardware Safe: Densification spacing dynamically increased to {test_dens:.1f}m "
+                f"to keep waypoints under {max_wp} (Total: {final_wp_count} pts)."
             )
         else:
-            test_dens = 5.0 if is_simple_mode else max(1.0, dens_val)
-            final_wp_count = 0
-            
-            # Minimum possible waypoints (just the start and end of each line)
-            base_wp_count = sum(2 for line_geom in clipped_lines if len(line_geom.asPolyline()) >= 2)
-
-            while True:
-                final_wp_count = 0
-                for line_geom in clipped_lines:
-                    pts = line_geom.asPolyline()
-                    if len(pts) >= 2:
-                        dx = pts[-1].x() - pts[0].x()
-                        dy = pts[-1].y() - pts[0].y()
-                        dist_m = math.hypot(dx, dy) * conversion_factor
-                        final_wp_count += int(dist_m / test_dens) + 2
-
-                if final_wp_count <= max_wp:
-                    break
-                    
-                # Safety escape hatch to avoid infinite loops on gigantic areas
-                if base_wp_count >= max_wp and test_dens >= 150.0:
-                    break
-                if test_dens >= 500.0:
-                    break
-
-                test_dens += 1.0
-
-            actual_dens_step = test_dens / conversion_factor
-
-            if final_wp_count > max_wp:
-                feedback.pushWarning(
-                    f"⚠️ Hardware Alert: Area is massive! Even capping densification at {test_dens:.1f}m, "
-                    f"total waypoints ({final_wp_count}) still exceeds your limit of {max_wp}. "
-                    f"Consider splitting your polygon into smaller areas."
-                )
-            elif test_dens > 100.0:
-                feedback.pushWarning(
-                    f"⚠️ Hardware Protection: Densification spacing was dynamically increased to a massive {test_dens:.1f}m "
-                    f"to keep waypoints under {max_wp}. Terrain Following quality might be compromised!"
-                )
-            elif test_dens > (5.0 if is_simple_mode else dens_val):
-                feedback.pushInfo(
-                    f"ℹ️ Hardware Safe: Densification spacing dynamically increased to {test_dens:.1f}m "
-                    f"to keep waypoints under {max_wp} (Total: {final_wp_count} pts)."
-                )
-            else:
-                feedback.pushInfo(
-                    f"ℹ️ Hardware Safe: Using {test_dens:.1f}m densification (Estimated: {final_wp_count} total waypoints)."
-                )
+            feedback.pushInfo(
+                f"ℹ️ Hardware Safe: Using {test_dens:.1f}m densification (Estimated: {final_wp_count} total waypoints)."
+            )
 
         waypoints = []
         go_right = True
@@ -562,64 +560,54 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             "<h4>Parameters:</h4>"
             "<ul>"
             "<li><b>Area Polygon:</b> The vector layer defining your survey boundary.</li>"
-            "<li><b>DEM (Terrain Following):</b> Provide a Digital Elevation Model layer. If supplied, the drone will adjust its height based on the terrain. If left empty, the flight will be perfectly flat.</li>"
+            "<li><b>DEM (Terrain Following):</b> Optional. Provide a Digital Elevation Model layer. The drone will adjust its height based on the terrain. If left empty, a flat flight is generated.</li>"
             "<li><b>Flight Altitude:</b> Constant height (in meters) the drone will maintain above the ground or takeoff point.</li>"
             "<li><b>Flight Speed:</b> Cruising speed of the drone. For mapping, 5 to 10 m/s is highly recommended.</li>"
             "<li><b>Lateral Overlap (%):</b> Used to automatically calculate the distance between flight lines to ensure proper photo overlaps for orthomosaic processing.</li>"
-            "<li><b>Max Waypoints Limit:</b> Crucial safety limit. Smart remote controllers (like DJI RC2) often limit single routes to ~200 waypoints. The algorithm dynamically decreases line densification to respect this limit, preventing memory errors on your controller.</li>"
+            "<li><b>Max Waypoints Limit:</b> Crucial safety limit. Smart controllers often limit single routes to a certain number of waypoints (e.g. 200). The algorithm dynamically decreases line densification to respect this limit, preventing memory errors.</li>"
             "</ul>"
         )
 
     def initAlgorithm(self, config=None):
-        p_input = QgsProcessingParameterFeatureSource(
+        self.addParameter(QgsProcessingParameterFeatureSource(
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
-        )
-        p_input.setMetadata({'tooltip': 'Select the target boundary polygon for your flight.'})
-        self.addParameter(p_input)
-
-        p_dem = QgsProcessingParameterRasterLayer(
+        ))
+        
+        self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
-        )
-        p_dem.setMetadata({'tooltip': 'Provide a Digital Elevation Model for Terrain Following. Leave empty for flat flights.'})
-        self.addParameter(p_dem)
-
-        p_alt = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
-        )
-        p_alt.setMetadata({'tooltip': 'Target height above the ground level (in meters).'})
-        self.addParameter(p_alt)
-
-        p_speed = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
-        )
-        p_speed.setMetadata({'tooltip': 'Drone flight speed. Recommended: 5 to 10 m/s.'})
-        self.addParameter(p_speed)
-
-        p_overlap = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
-        )
-        p_overlap.setMetadata({'tooltip': 'Desired side overlap for photogrammetry. Dictates distance between lines.'})
-        self.addParameter(p_overlap)
-
-        p_maxwp = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
-        )
-        p_maxwp.setMetadata({'tooltip': 'Hardware limit for your remote controller (e.g., DJI RC2 = 200).'})
-        self.addParameter(p_maxwp)
-
+        ))
+        
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
@@ -739,99 +727,77 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
         )
 
     def initAlgorithm(self, config=None):
-        p_input = QgsProcessingParameterFeatureSource(
+        self.addParameter(QgsProcessingParameterFeatureSource(
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
-        )
-        p_input.setMetadata({'tooltip': 'Select the target boundary polygon for your flight.'})
-        self.addParameter(p_input)
-
-        p_dem = QgsProcessingParameterRasterLayer(
+        ))
+        
+        self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
-        )
-        p_dem.setMetadata({'tooltip': 'Provide a Digital Elevation Model for Terrain Following. Leave empty for flat flights.'})
-        self.addParameter(p_dem)
-
-        p_alt = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
-        )
-        p_alt.setMetadata({'tooltip': 'Target height above the ground level (in meters).'})
-        self.addParameter(p_alt)
-
-        p_speed = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
-        )
-        p_speed.setMetadata({'tooltip': 'Drone flight speed. Recommended: 5 to 10 m/s.'})
-        self.addParameter(p_speed)
+        ))
 
-        p_use_overlap = QgsProcessingParameterBoolean(
+        self.addParameter(QgsProcessingParameterBoolean(
             self.USE_CUSTOM_ANGLE, self.tr('Use Custom Flight Line Azimuth'),
             defaultValue=False
-        )
-        p_use_overlap.setMetadata({'tooltip': 'Check to force a specific flight direction (Azimuth).'})
-        self.addParameter(p_use_overlap)
-
-        p_angle = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.CUSTOM_ANGLE,
             self.tr('Custom Azimuth (0=North, 90=East) [If checked]'),
             type=QgsProcessingParameterNumber.Double, defaultValue=0.0
-        )
-        p_angle.setMetadata({'tooltip': 'Set the geographic angle for your flight lines (0 to 360).'})
-        self.addParameter(p_angle)
+        ))
 
-        p_calc_overlap = QgsProcessingParameterBoolean(
+        self.addParameter(QgsProcessingParameterBoolean(
             self.USE_OVERLAP, self.tr('Calculate spacing using Overlap %'),
             defaultValue=True
-        )
-        p_calc_overlap.setMetadata({'tooltip': 'Uncheck to provide a manual spacing distance in meters.'})
-        self.addParameter(p_calc_overlap)
-
-        p_overlap = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
-        )
-        p_overlap.setMetadata({'tooltip': 'Desired side overlap for photogrammetry. Dictates distance between lines.'})
-        self.addParameter(p_overlap)
-
-        p_spacing = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.SPACING,
             self.tr('Manual Line Spacing (m) [If checkbox is unchecked]'),
             type=QgsProcessingParameterNumber.Double, defaultValue=30.0
-        )
-        p_spacing.setMetadata({'tooltip': 'Fixed distance between lines. Ignored if Overlap calculation is checked.'})
-        self.addParameter(p_spacing)
+        ))
 
-        p_buffer = QgsProcessingParameterNumber(
+        self.addParameter(QgsProcessingParameterNumber(
             self.BUFFER_AREA, self.tr('Boundary Buffer (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=15.0
-        )
-        p_buffer.setMetadata({'tooltip': 'Expands flight lines slightly outside your polygon to guarantee edge coverage.'})
-        self.addParameter(p_buffer)
-
-        p_dens = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.DENSIFICATION, self.tr('Min Densification Distance (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=5.0
-        )
-        p_dens.setMetadata({'tooltip': 'Minimum spacing between terrain-following waypoints. Starts at 5m.'})
-        self.addParameter(p_dens)
-
-        p_maxwp = QgsProcessingParameterNumber(
+        ))
+        
+        self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
-        )
-        p_maxwp.setMetadata({'tooltip': 'Hardware limit for your remote controller (e.g., DJI RC2 = 200).'})
-        self.addParameter(p_maxwp)
+        ))
 
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
