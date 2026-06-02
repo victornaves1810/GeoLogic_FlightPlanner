@@ -121,7 +121,7 @@ def process_flight_logic(
         flight_speed, spacing_val, buffer_val, dens_val, use_custom_angle,
         azimuth_val, kmz_path, dest_id_lines, sink_lines, dest_id_points,
         sink_points, line_fields, point_fields, is_simple_mode=False,
-        max_wp=200, max_dens_limit=100.0):
+        max_wp=200):
 
     results = {'OUTPUT_LINES': dest_id_lines, 'OUTPUT_POINTS': dest_id_points}
     if not source:
@@ -193,56 +193,60 @@ def process_flight_logic(
         # ==========================================
         MAX_FLIGHT_TIME = 35.0
 
-        if dem_layer is None:
-            actual_dens_step = float('inf')
+        test_dens = 5.0 if is_simple_mode else max(1.0, dens_val)
+        final_wp_count = 0
+        
+        # Calculate base waypoints (just start and end of each line)
+        base_wp_count = sum(2 for line_geom in clipped_lines if len(line_geom.asPolyline()) >= 2)
+
+        # Iterate to find the densification distance that fits within max_wp
+        while True:
+            final_wp_count = 0
+            for line_geom in clipped_lines:
+                pts = line_geom.asPolyline()
+                if len(pts) >= 2:
+                    dx = pts[-1].x() - pts[0].x()
+                    dy = pts[-1].y() - pts[0].y()
+                    dist_m = math.hypot(dx, dy) * conversion_factor
+                    # +1 for start point, + (segments - 1) for intermediates, +1 for end point
+                    final_wp_count += int(dist_m / test_dens) + 2
+
+            # Break if we are within limits
+            if final_wp_count <= max_wp:
+                break
+                
+            # If the bare minimum waypoints (no intermediate points) already exceed the limit, 
+            # no amount of densification increase will solve it. Break and use infinity.
+            if base_wp_count > max_wp:
+                test_dens = float('inf')
+                final_wp_count = base_wp_count
+                break
+
+            # Increase test distance to reduce points
+            test_dens += 1.0
+
+        actual_dens_step = test_dens / conversion_factor
+
+        if base_wp_count > max_wp:
+            feedback.pushWarning(
+                f"⚠️ Hardware Alert: The area is too large! Even with no intermediate waypoints, "
+                f"the route requires {base_wp_count} waypoints, which exceeds your limit of {max_wp}. "
+                f"You MUST split the polygon into smaller areas or increase the Max Waypoints limit."
+            )
+        elif test_dens > 100.0 and test_dens != float('inf'):
+            feedback.pushWarning(
+                f"⚠️ Hardware Protection: Densification spacing was dynamically increased to {test_dens:.1f}m "
+                f"to keep waypoints under {max_wp}. Terrain Following quality may be compromised!"
+            )
+        elif test_dens > (5.0 if is_simple_mode else dens_val):
             feedback.pushInfo(
-                "ℹ️ Hardware Optimization: Flat flight (No DEM) detected. "
-                "Intermediate waypoints disabled to save memory."
+                f"ℹ️ Hardware Safe: Densification spacing dynamically increased to {test_dens:.1f}m "
+                f"to keep waypoints under {max_wp} (Total: {final_wp_count} pts)."
             )
         else:
-            test_dens = 10.0 if is_simple_mode else max(1.0, dens_val)
-            # Ensure the upper limit is at least the starting densification
-            limit_dens = max(test_dens, max_dens_limit)
-            final_wp_count = 0
-
-            while test_dens <= limit_dens:
-                final_wp_count = 0
-                for line_geom in clipped_lines:
-                    pts = line_geom.asPolyline()
-                    if len(pts) >= 2:
-                        dx = pts[-1].x() - pts[0].x()
-                        dy = pts[-1].y() - pts[0].y()
-                        dist_m = math.hypot(dx, dy) * conversion_factor
-                        final_wp_count += int(dist_m / test_dens) + 2
-
-                if final_wp_count <= max_wp:
-                    break
-
-                if test_dens >= limit_dens:
-                    break
-
-                test_dens += 1.0
-
-            actual_dens_step = test_dens / conversion_factor
-
-            if final_wp_count > max_wp:
-                feedback.pushWarning(
-                    f"⚠️ Hardware Alert: Route is massive. Densification "
-                    f"capped at {limit_dens:.1f}m, but total waypoints "
-                    f"({final_wp_count}) exceeds limit of {max_wp}. "
-                    f"App may be unstable."
-                )
-            elif test_dens > (10.0 if is_simple_mode else dens_val):
-                feedback.pushWarning(
-                    f"⚠️ Hardware Protection: Densification spacing "
-                    f"dynamically increased to {test_dens:.1f}m to keep "
-                    f"waypoints under {max_wp} (Total: {final_wp_count} pts)."
-                )
-            else:
-                feedback.pushInfo(
-                    f"ℹ️ Hardware Safe: Using {test_dens:.1f}m densification "
-                    f"(Estimated: {final_wp_count} total waypoints)."
-                )
+            feedback.pushInfo(
+                f"ℹ️ Hardware Safe: Using {test_dens:.1f}m densification (Estimated: {final_wp_count} total waypoints)."
+            )
 
         waypoints = []
         go_right = True
@@ -444,7 +448,7 @@ def process_flight_logic(
     <wpml:missionConfig>
       <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
       <wpml:finishAction>goHome</wpml:finishAction>
-      <wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost>
+      <wpml:exitOnRCLost>executeLostAction</wpml:executeRCLostAction>
       <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
       <wpml:globalTransitionalSpeed>{flight_speed}</wpml:globalTransitionalSpeed>
       <wpml:droneInfo>
@@ -520,7 +524,6 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
     SPEED = 'SPEED'
     OVERLAP_PERCENT = 'OVERLAP_PERCENT'
     MAX_WP = 'MAX_WP'
-    MAX_DENS = 'MAX_DENS'
     OUTPUT_KMZ = 'OUTPUT_KMZ'
     OUTPUT_LINES = 'OUTPUT_LINES'
     OUTPUT_POINTS = 'OUTPUT_POINTS'
@@ -545,8 +548,17 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(
-            "Express mode for quick, safe flight planning. Auto-handles "
-            "rotation, dynamic densification, and buffer safety."
+            "<h3>GeoLogic Simple Flight Planner</h3>"
+            "<p>Express mode for quick and safe flight planning. Automatically handles map rotation, dynamic densification, and buffer safety.</p>"
+            "<h4>Inputs:</h4>"
+            "<ul>"
+            "<li><i>Area Polygon:</i> The vector layer defining your survey boundary.</li>"
+            "<li><i>DEM (Optional):</i> Digital Elevation Model for Terrain Following. If empty, a flat flight is generated.</li>"
+            "<li><i>Flight Altitude:</i> Constant height (in meters) above ground or takeoff point.</li>"
+            "<li><i>Flight Speed:</i> Cruising speed of the drone. Recommended: 5 to 10 m/s.</li>"
+            "<li><i>Lateral Overlap (%):</i> Calculates distance between flight lines for proper photogrammetry overlap.</li>"
+            "<li><i>Max Waypoints Limit:</i> Hardware limit of your remote controller (e.g., DJI RC2 = 200). The algorithm dynamically decreases line densification to respect this limit and prevent memory errors.</li>"
+            "</ul>"
         )
 
     def initAlgorithm(self, config=None):
@@ -554,38 +566,41 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
         ))
+        
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
         ))
-        self.addParameter(QgsProcessingParameterNumber(
-            self.MAX_DENS, self.tr('Max Densification Distance (m)'),
-            type=QgsProcessingParameterNumber.Double, defaultValue=100.0
-        ))
-
+        
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
@@ -599,12 +614,11 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             parameters, self.OVERLAP_PERCENT, context
         )
         max_wp_limit = self.parameterAsInt(parameters, self.MAX_WP, context)
-        max_dens_limit = self.parameterAsDouble(parameters, self.MAX_DENS, context)
 
         footprint_width = flight_altitude * 1.5
         spacing_val = footprint_width * (1.0 - (overlap_percent / 100.0))
         buffer_val = spacing_val / 2.0
-        dens_val = 10.0
+        dens_val = 5.0
 
         feedback.pushInfo(
             f"ℹ️ Express Mode: Auto-spacing = {spacing_val:.2f}m. "
@@ -639,7 +653,7 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             self, context, feedback, source, dem_layer, flight_altitude,
             flight_speed, spacing_val, buffer_val, dens_val, False, 0.0,
             kmz_path, dest_id_lines, sink_lines, dest_id_points, sink_points,
-            line_fields, point_fields, True, max_wp_limit, max_dens_limit
+            line_fields, point_fields, True, max_wp_limit
         )
 
 
@@ -662,7 +676,6 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
     BUFFER_AREA = 'BUFFER_AREA'
     DENSIFICATION = 'DENSIFICATION'
     MAX_WP = 'MAX_WP'
-    MAX_DENS = 'MAX_DENS'
     OUTPUT_KMZ = 'OUTPUT_KMZ'
     OUTPUT_LINES = 'OUTPUT_LINES'
     OUTPUT_POINTS = 'OUTPUT_POINTS'
@@ -687,8 +700,17 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(
-            "Maximum route optimization with manual azimuth control, automated "
-            "overlap calculation, native CRS, and hardware memory protection."
+            "<h3>GeoLogic Advanced Flight Planner</h3>"
+            "<p>Maximum route optimization with granular control over line direction, custom spacing, and advanced hardware memory protection.</p>"
+            "<h4>Inputs:</h4>"
+            "<ul>"
+            "<li><i>Area Polygon / DEM / Altitude / Speed:</i> Basic flight parameters (same as Simple mode).</li>"
+            "<li><i>Custom Azimuth:</i> Force a specific geographic direction for flight lines (0 to 360 degrees).</li>"
+            "<li><i>Manual Line Spacing:</i> Overrides the automatic overlap calculator to allow an arbitrary fixed distance between lines.</li>"
+            "<li><i>Boundary Buffer:</i> Creates a safety margin outside your polygon to guarantee perfect edge coverage.</li>"
+            "<li><i>Min Densification Distance:</i> The minimum allowed distance between terrain-following waypoints. Lower values (e.g., 5m) create smoother flights but consume more waypoints.</li>"
+            "<li><i>Max Waypoints Limit:</i> Controller limit. The tool will dynamically increase the densification distance if the route exceeds this waypoint cap.</li>"
+            "</ul>"
         )
 
     def initAlgorithm(self, config=None):
@@ -696,14 +718,17 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
         ))
+        
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
@@ -713,6 +738,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.USE_CUSTOM_ANGLE, self.tr('Use Custom Flight Line Azimuth'),
             defaultValue=False
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.CUSTOM_ANGLE,
             self.tr('Custom Azimuth (0=North, 90=East) [If checked]'),
@@ -723,10 +749,12 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.USE_OVERLAP, self.tr('Calculate spacing using Overlap %'),
             defaultValue=True
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPACING,
             self.tr('Manual Line Spacing (m) [If checkbox is unchecked]'),
@@ -737,26 +765,26 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.BUFFER_AREA, self.tr('Boundary Buffer (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=15.0
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.DENSIFICATION, self.tr('Min Densification Distance (m)'),
-            type=QgsProcessingParameterNumber.Double, defaultValue=10.0
+            type=QgsProcessingParameterNumber.Double, defaultValue=5.0
         ))
+        
         self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
-        ))
-        self.addParameter(QgsProcessingParameterNumber(
-            self.MAX_DENS, self.tr('Max Densification Distance (m)'),
-            type=QgsProcessingParameterNumber.Double, defaultValue=100.0
         ))
 
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
+        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
@@ -767,7 +795,6 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
         flight_altitude = self.parameterAsInt(parameters, self.ALTITUDE, context)
         flight_speed = self.parameterAsDouble(parameters, self.SPEED, context)
         max_wp_limit = self.parameterAsInt(parameters, self.MAX_WP, context)
-        max_dens_limit = self.parameterAsDouble(parameters, self.MAX_DENS, context)
 
         use_overlap = self.parameterAsBool(parameters, self.USE_OVERLAP, context)
         if use_overlap:
@@ -805,7 +832,7 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             parameters, self.DENSIFICATION, context
         )
         if dens_val <= 1.0:
-            dens_val = 10.0
+            dens_val = 5.0
 
         kmz_path = self.parameterAsFileOutput(
             parameters, self.OUTPUT_KMZ, context
@@ -835,5 +862,5 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self, context, feedback, source, dem_layer, flight_altitude,
             flight_speed, spacing_val, buffer_val, dens_val, use_custom_angle,
             azimuth_val, kmz_path, dest_id_lines, sink_lines, dest_id_points,
-            sink_points, line_fields, point_fields, False, max_wp_limit, max_dens_limit
+            sink_points, line_fields, point_fields, False, max_wp_limit
         )
