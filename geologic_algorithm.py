@@ -548,15 +548,17 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(
-            "<b>GeoLogic Simple Flight Planner</b><br><br>"
-            "Express mode for quick and safe flight planning. Automatically handles map rotation, dynamic densification, and buffer safety.<br><br>"
-            "<b>Inputs:</b><br>"
-            "• <b>Area Polygon:</b> The vector layer defining your survey boundary.<br>"
-            "• <b>DEM (Optional):</b> Digital Elevation Model for Terrain Following. If empty, a flat flight is generated.<br>"
-            "• <b>Flight Altitude:</b> Constant height (in meters) above ground or takeoff point.<br>"
-            "• <b>Flight Speed:</b> Cruising speed of the drone. Recommended: 5 to 10 m/s.<br>"
-            "• <b>Lateral Overlap (%):</b> Calculates distance between flight lines for proper photogrammetry overlap.<br>"
-            "• <b>Max Waypoints Limit:</b> Hardware limit of your remote controller (e.g., DJI RC2 = 200). The algorithm dynamically decreases line densification to respect this limit and prevent memory errors."
+            "<h3>GeoLogic Simple Flight Planner</h3>"
+            "<p>Express mode for quick and safe flight planning. Automatically handles map rotation, dynamic densification, and buffer safety.</p>"
+            "<h4>Inputs:</h4>"
+            "<ul>"
+            "<li><i>Area Polygon:</i> The vector layer defining your survey boundary.</li>"
+            "<li><i>DEM (Optional):</i> Digital Elevation Model for Terrain Following. If empty, a flat flight is generated.</li>"
+            "<li><i>Flight Altitude:</i> Constant height (in meters) above ground or takeoff point.</li>"
+            "<li><i>Flight Speed:</i> Cruising speed of the drone. Recommended: 5 to 10 m/s.</li>"
+            "<li><i>Lateral Overlap (%):</i> Calculates distance between flight lines for proper photogrammetry overlap.</li>"
+            "<li><i>Max Waypoints Limit:</i> Hardware limit of your remote controller (e.g., DJI RC2 = 200). The algorithm dynamically decreases line densification to respect this limit and prevent memory errors.</li>"
+            "</ul>"
         )
 
     def initAlgorithm(self, config=None):
@@ -698,15 +700,17 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(
-            "<b>GeoLogic Advanced Flight Planner</b><br><br>"
-            "Maximum route optimization with granular control over line direction, custom spacing, and advanced hardware memory protection.<br><br>"
-            "<b>Inputs:</b><br>"
-            "• <b>Area Polygon / DEM / Altitude / Speed:</b> Basic flight parameters (same as Simple mode).<br>"
-            "• <b>Custom Azimuth:</b> Force a specific geographic direction for flight lines (0 to 360 degrees).<br>"
-            "• <b>Manual Line Spacing:</b> Overrides the automatic overlap calculator to allow an arbitrary fixed distance between lines.<br>"
-            "• <b>Boundary Buffer:</b> Creates a safety margin outside your polygon to guarantee perfect edge coverage.<br>"
-            "• <b>Min Densification Distance:</b> The minimum allowed distance between terrain-following waypoints. Lower values (e.g., 5m) create smoother flights but consume more waypoints.<br>"
-            "• <b>Max Waypoints Limit:</b> Controller limit. The tool will dynamically increase the densification distance if the route exceeds this waypoint cap."
+            "<h3>GeoLogic Advanced Flight Planner</h3>"
+            "<p>Maximum route optimization with granular control over line direction, custom spacing, and advanced hardware memory protection.</p>"
+            "<h4>Inputs:</h4>"
+            "<ul>"
+            "<li><i>Area Polygon / DEM / Altitude / Speed:</i> Basic flight parameters (same as Simple mode).</li>"
+            "<li><i>Custom Azimuth:</i> Force a specific geographic direction for flight lines (0 to 360 degrees).</li>"
+            "<li><i>Manual Line Spacing:</i> Overrides the automatic overlap calculator to allow an arbitrary fixed distance between lines.</li>"
+            "<li><i>Boundary Buffer:</i> Creates a safety margin outside your polygon to guarantee perfect edge coverage.</li>"
+            "<li><i>Min Densification Distance:</i> The minimum allowed distance between terrain-following waypoints. Lower values (e.g., 5m) create smoother flights but consume more waypoints.</li>"
+            "<li><i>Max Waypoints Limit:</i> Controller limit. The tool will dynamically increase the densification distance if the route exceeds this waypoint cap.</li>"
+            "</ul>"
         )
 
     def initAlgorithm(self, config=None):
