@@ -195,7 +195,7 @@ def process_flight_logic(
 
         test_dens = 5.0 if is_simple_mode else max(1.0, dens_val)
         final_wp_count = 0
-        
+
         # Calculate base waypoints (just start and end of each line)
         base_wp_count = sum(2 for line_geom in clipped_lines if len(line_geom.asPolyline()) >= 2)
 
@@ -214,8 +214,8 @@ def process_flight_logic(
             # Break if we are within limits
             if final_wp_count <= max_wp:
                 break
-                
-            # If the bare minimum waypoints (no intermediate points) already exceed the limit, 
+
+            # If the bare minimum waypoints (no intermediate points) already exceed the limit,
             # no amount of densification increase will solve it. Break and use infinity.
             if base_wp_count > max_wp:
                 test_dens = float('inf')
@@ -448,7 +448,7 @@ def process_flight_logic(
     <wpml:missionConfig>
       <wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode>
       <wpml:finishAction>goHome</wpml:finishAction>
-      <wpml:exitOnRCLost>executeLostAction</wpml:executeRCLostAction>
+      <wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost>
       <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
       <wpml:globalTransitionalSpeed>{flight_speed}</wpml:globalTransitionalSpeed>
       <wpml:droneInfo>
@@ -566,41 +566,33 @@ class DjiSimpleWaypointAlgorithm(QgsProcessingAlgorithm):
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
         ))
-        
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
         ))
-        
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
-        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
-        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
@@ -718,73 +710,59 @@ class DjiAdvancedWaypointAlgorithm(QgsProcessingAlgorithm):
             self.INPUT, self.tr('Area Polygon'),
             [QgsProcessing.TypeVectorPolygon]
         ))
-        
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.DEM, self.tr('DEM (Terrain Following) - Optional'),
             optional=True
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.ALTITUDE, self.tr('Flight Altitude (m)'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=100
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPEED, self.tr('Flight Speed (m/s)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=9.0
         ))
-
         self.addParameter(QgsProcessingParameterBoolean(
             self.USE_CUSTOM_ANGLE, self.tr('Use Custom Flight Line Azimuth'),
             defaultValue=False
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.CUSTOM_ANGLE,
             self.tr('Custom Azimuth (0=North, 90=East) [If checked]'),
             type=QgsProcessingParameterNumber.Double, defaultValue=0.0
         ))
-
         self.addParameter(QgsProcessingParameterBoolean(
             self.USE_OVERLAP, self.tr('Calculate spacing using Overlap %'),
             defaultValue=True
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.OVERLAP_PERCENT, self.tr('Lateral Overlap (%)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=83.0
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.SPACING,
             self.tr('Manual Line Spacing (m) [If checkbox is unchecked]'),
             type=QgsProcessingParameterNumber.Double, defaultValue=30.0
         ))
-
         self.addParameter(QgsProcessingParameterNumber(
             self.BUFFER_AREA, self.tr('Boundary Buffer (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=15.0
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.DENSIFICATION, self.tr('Min Densification Distance (m)'),
             type=QgsProcessingParameterNumber.Double, defaultValue=5.0
         ))
-        
         self.addParameter(QgsProcessingParameterNumber(
             self.MAX_WP, self.tr('Max Waypoints Limit'),
             type=QgsProcessingParameterNumber.Integer, defaultValue=200
         ))
-
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT_KMZ, self.tr('Save KMZ to:'),
             'KMZ Files (*.kmz)', optional=True
         ))
-        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_LINES, self.tr('Flight Route')
         ))
-        
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT_POINTS, self.tr('Waypoints')
         ))
